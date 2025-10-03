@@ -1127,15 +1127,23 @@ $(document).ready(function(){
                 ? `<div class="mt-3"><h6>Clases inscritas:</h6><ul>${clasesUsuario.map(c => `<li>${c.nombre} - ${c.horario}</li>`).join('')}</ul></div>`
                 : '<div class="mt-3"><p class="text-muted">No está inscrito en ninguna clase</p></div>';
             
+            // Verificar estado de vencimiento
+            const vencida = estaVencida(user.fecha_vencimiento);
+            const estadoClass = vencida ? 'text-danger fw-bold' : 'text-success fw-bold';
+            const estadoTexto = vencida ? '⚠️ VENCIDA' : '✅ ACTIVA';
+            const badgeClass = vencida ? 'bg-danger' : 'bg-success';
+            const estadoBadge = vencida ? 'VENCIDA' : 'ACTIVA';
+            
             container.innerHTML = `
-                <div class="user-info-card">
+                <div class="user-info-card ${vencida ? 'border-danger' : ''}">
                     <div class="d-flex align-items-center mb-3">
                         <div class="user-avatar me-3">
                             <i class="fas fa-user"></i>
                         </div>
                         <div>
                             <h4 class="mb-1">${user.nombre} ${user.apellido}</h4>
-                            <span class="badge bg-primary">ID: ${user.id}</span>
+                            <span class="badge bg-primary me-2">ID: ${user.id}</span>
+                            <span class="badge ${badgeClass}">MEMBRESÍA ${estadoBadge}</span>
                         </div>
                     </div>
                     <div class="row">
@@ -1144,7 +1152,7 @@ $(document).ready(function(){
                             <p><strong><i class="fas fa-envelope me-2"></i>Email:</strong> ${user.email || 'No especificado'}</p>
                         </div>
                         <div class="col-md-6">
-                            <p><strong><i class="fas fa-calendar me-2"></i>Vencimiento:</strong> ${user.fecha_vencimiento}</p>
+                            <p><strong><i class="fas fa-calendar me-2"></i>Vencimiento:</strong> <span class="${estadoClass}">${user.fecha_vencimiento} ${estadoTexto}</span></p>
                             <p><strong><i class="fas fa-id-card me-2"></i>DNI:</strong> ${user.dni}</p>
                         </div>
                     </div>
@@ -1441,6 +1449,22 @@ if(!GymStorage.prototype.getIngresos){
     };
 }
 
+// Función para verificar si una membresía está vencida
+function estaVencida(fechaVencimiento) {
+    const hoy = new Date();
+    const vencimiento = new Date(fechaVencimiento);
+    return vencimiento < hoy;
+}
+
+// Función para formatear fecha en español
+function formatearFecha(fecha) {
+    return new Date(fecha).toLocaleDateString('es-ES', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
+}
+
 $('#btnRegistrarIngreso').on('click', function(){
     const uid = $(this).data('uid');
     const usuario = storage.getUsuario(uid);
@@ -1448,8 +1472,27 @@ $('#btnRegistrarIngreso').on('click', function(){
         showAlert('Usuario no encontrado', 'danger');
         return;
     }
+    
+    // Verificar si la membresía está vencida
+    if (estaVencida(usuario.fecha_vencimiento)) {
+        const mensaje = `⚠️ ATENCIÓN: La membresía de ${usuario.nombre} ${usuario.apellido} está vencida desde el ${formatearFecha(usuario.fecha_vencimiento)}.\n\n¿Desea permitir el ingreso de manera excepcional?`;
+        
+        if (confirm(mensaje)) {
+            storage.addIngreso({
+                usuario_id: uid, 
+                fecha: new Date().toISOString(),
+                excepcional: true
+            });
+            showAlert('⚠️ Ingreso EXCEPCIONAL registrado (Membresía vencida)', 'warning');
+        } else {
+            showAlert('Ingreso cancelado - Membresía vencida', 'danger');
+        }
+        return;
+    }
+    
+    // Si no está vencida, registrar ingreso normalmente
     storage.addIngreso({usuario_id: uid, fecha: new Date().toISOString()});
-    showAlert('Ingreso registrado');
+    showAlert('✅ Ingreso registrado correctamente', 'success');
 });
 
 let tablaIngresos;

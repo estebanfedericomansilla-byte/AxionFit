@@ -93,6 +93,37 @@
     </div>
 </div>
 
+<!-- Modal para Membresía Vencida -->
+<div class="modal fade" id="modalVencimiento" tabindex="-1" aria-labelledby="modalVencimientoLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-danger">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title" id="modalVencimientoLabel">
+          <i class="fas fa-exclamation-triangle me-2"></i>¡MEMBRESÍA VENCIDA!
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center">
+        <div class="alert alert-danger" role="alert">
+          <i class="fas fa-calendar-times fa-3x mb-3 text-danger"></i>
+          <h4 class="alert-heading">Membresía Vencida</h4>
+          <p class="mb-3">El miembro <strong id="nombreMiembroVencido"></strong> tiene su membresía vencida desde el <strong id="fechaVencimiento"></strong>.</p>
+          <hr>
+          <p class="mb-0">Por favor, solicite al miembro que renueve su membresía antes de permitir el ingreso.</p>
+        </div>
+        <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+            <i class="fas fa-times me-2"></i>Cancelar Ingreso
+          </button>
+          <button type="button" class="btn btn-warning" id="btnPermitirIngresoVencido">
+            <i class="fas fa-check me-2"></i>Permitir Ingreso (Excepcional)
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Scripts -->
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
@@ -114,6 +145,22 @@ class GymStorage{
     addIngreso(i){const arr=this.getIngresos();i.id=this.getNextId();arr.push(i);localStorage.setItem('gym_ingresos',JSON.stringify(arr));}
 }
 const storage=new GymStorage();
+
+// Función para verificar si una membresía está vencida
+function estaVencida(fechaVencimiento) {
+    const hoy = new Date();
+    const vencimiento = new Date(fechaVencimiento);
+    return vencimiento < hoy;
+}
+
+// Función para formatear fecha en español
+function formatearFecha(fecha) {
+    return new Date(fecha).toLocaleDateString('es-ES', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
+}
 
 // DataTable
 const dt=$('#tablaIngresos').DataTable({language:{search:'Buscar:',lengthMenu:'Mostrar _MENU_',info:'_START_ - _END_ de _TOTAL_',paginate:{first:'Primero',last:'Último',next:'Siguiente',previous:'Anterior'},emptyTable:'Sin registros'},order:[[0,'desc']]});
@@ -166,6 +213,10 @@ $('#formBuscar').on('submit', function(e) {
 
 // Función para mostrar información del miembro
 function mostrarMiembro(usuario) {
+    const vencida = estaVencida(usuario.fecha_vencimiento);
+    const estadoClass = vencida ? 'text-danger' : 'text-success';
+    const estadoTexto = vencida ? '⚠️ VENCIDA' : '✅ ACTIVA';
+    
     const info = `
         <div class="row">
             <div class="col-md-6">
@@ -175,7 +226,7 @@ function mostrarMiembro(usuario) {
             </div>
             <div class="col-md-6">
                 <p><strong>Email:</strong> ${usuario.email || 'No especificado'}</p>
-                <p><strong>Vencimiento:</strong> ${usuario.fecha_vencimiento}</p>
+                <p><strong>Vencimiento:</strong> <span class="${estadoClass} fw-bold">${usuario.fecha_vencimiento} ${estadoTexto}</span></p>
                 <p><strong>DNI:</strong> ${usuario.dni}</p>
             </div>
         </div>
@@ -191,15 +242,22 @@ $('#btnMostrarTodos').on('click', function() {
     const usuarios = storage.getUsuarios();
     
     tablaMiembros.clear();
-    tablaMiembros.rows.add(usuarios.map(u => [
-        u.id,
-        `${u.nombre} ${u.apellido}`,
-        u.telefono || 'Sin teléfono',
-        u.fecha_vencimiento,
-        `<button class="btn btn-sm btn-success" onclick="registrarIngresoDirecto(${u.id}, '${u.nombre}', '${u.apellido}')">
-            <i class="fas fa-door-open me-1"></i>Registrar Ingreso
-         </button>`
-    ]));
+    tablaMiembros.rows.add(usuarios.map(u => {
+        const vencida = estaVencida(u.fecha_vencimiento);
+        const estadoClass = vencida ? 'text-danger fw-bold' : 'text-success';
+        const estadoTexto = vencida ? '⚠️ VENCIDA' : '✅ ACTIVA';
+        const btnClass = vencida ? 'btn-warning' : 'btn-success';
+        
+        return [
+            u.id,
+            `${u.nombre} ${u.apellido}`,
+            u.telefono || 'Sin teléfono',
+            `<span class="${estadoClass}">${u.fecha_vencimiento} ${estadoTexto}</span>`,
+            `<button class="btn btn-sm ${btnClass}" onclick="registrarIngresoDirecto(${u.id}, '${u.nombre}', '${u.apellido}', '${u.fecha_vencimiento}')">
+                <i class="fas fa-door-open me-1"></i>Registrar Ingreso
+             </button>`
+        ];
+    }));
     tablaMiembros.draw();
     
     $('#listaMiembrosContainer').removeClass('d-none');
@@ -216,27 +274,66 @@ $('#btnRegistrar').on('click', function() {
         return;
     }
     
-    storage.addIngreso({
-        usuario_id: id,
-        fecha: new Date().toISOString()
+    // Verificar si la membresía está vencida
+    if (estaVencida(usuario.fecha_vencimiento)) {
+        mostrarModalVencimiento(usuario);
+        return;
+    }
+    
+    // Si no está vencida, registrar ingreso normalmente
+    registrarIngreso(usuario);
+});
+
+// Función para mostrar modal de vencimiento
+function mostrarModalVencimiento(usuario) {
+    $('#nombreMiembroVencido').text(`${usuario.nombre} ${usuario.apellido}`);
+    $('#fechaVencimiento').text(formatearFecha(usuario.fecha_vencimiento));
+    
+    // Configurar botón para permitir ingreso excepcional
+    $('#btnPermitirIngresoVencido').off('click').on('click', function() {
+        registrarIngreso(usuario, true);
+        $('#modalVencimiento').modal('hide');
     });
     
-    alert(`Ingreso registrado para ${usuario.nombre} ${usuario.apellido}`);
+    $('#modalVencimiento').modal('show');
+}
+
+// Función para registrar ingreso
+function registrarIngreso(usuario, esExcepcional = false) {
+    storage.addIngreso({
+        usuario_id: usuario.id,
+        fecha: new Date().toISOString(),
+        excepcional: esExcepcional
+    });
+    
+    const mensaje = esExcepcional 
+        ? `⚠️ Ingreso EXCEPCIONAL registrado para ${usuario.nombre} ${usuario.apellido} (Membresía vencida)`
+        : `✅ Ingreso registrado para ${usuario.nombre} ${usuario.apellido}`;
+    
+    alert(mensaje);
     $('#resultadoBusqueda').addClass('d-none');
     $('#inputMiembro').val('');
     $('#inputTelefono').val('');
     refrescarTabla();
-});
+}
 
 // Función global para registro directo desde tabla
-function registrarIngresoDirecto(id, nombre, apellido) {
-    storage.addIngreso({
-        usuario_id: id,
-        fecha: new Date().toISOString()
-    });
+function registrarIngresoDirecto(id, nombre, apellido, fechaVencimiento) {
+    const usuario = storage.getUsuario(id);
     
-    alert(`Ingreso registrado para ${nombre} ${apellido}`);
-    refrescarTabla();
+    if (!usuario) {
+        alert('Miembro no encontrado');
+        return;
+    }
+    
+    // Verificar si la membresía está vencida
+    if (estaVencida(fechaVencimiento)) {
+        mostrarModalVencimiento(usuario);
+        return;
+    }
+    
+    // Si no está vencida, registrar ingreso normalmente
+    registrarIngreso(usuario);
 }
 </script>
 </body>
